@@ -1,6 +1,10 @@
 clone_depth: 1
-image: Visual Studio 2017
 version: '{branch}.{build}'
+
+image:
+  - Visual Studio 2015
+  - Visual Studio 2017
+  - Visual Studio 2019
 
 configuration:
   - Debug
@@ -10,6 +14,7 @@ environment:
   bin_dir: $(APPVEYOR_BUILD_FOLDER)/build/$(configuration)/bin
 
 platform:
+  - Win32
   - x64
 
 pull_requests:
@@ -29,7 +34,7 @@ build:
 
 test_script:
   - ps: cd "$env:bin_dir"
-  - ps: ./tests.exe
+  - ps: ./Tests.exe
 
 artifacts:
   - path: build/$(configuration)/libs

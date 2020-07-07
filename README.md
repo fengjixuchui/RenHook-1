@@ -1,87 +1,115 @@
 # RenHook
 
+[![Build Status](https://dev.azure.com/wopss/RenHook/_apis/build/status/WopsS.RenHook?branchName=master)](https://dev.azure.com/wopss/RenHook/_build/latest?definitionId=5&branchName=master)
 [![Build status](https://ci.appveyor.com/api/projects/status/8lg179n3y460q4lw?svg=true)](https://ci.appveyor.com/project/WopsS/renhook)
 
-An open-source **x64** hooking library for **Windows**.
+An open-source **x86 / x86-64** hooking library for **Windows**.
 
-*This branch is being reworked, for a stable version check the **[release](https://github.com/WopsS/RenHook/tree/release)** branch.*
+## Features
+
+* Supports x86 and x86-64 (uses [Zydis](https://github.com/zyantific/zydis) as diassembler)
+* Completely written in C++11
+* Safe and easy to use
+* Hooking methods
+  * **Inline hook** - Patches the prologue of a function to redirect its code flow, also allocates a trampoline to that can be used to execute the original function.
+
+## Quick examples
+
+### Hooking by address
+
+```cpp
+#include <Windows.h>
+#include <renhook/renhook.hpp>
+
+void func_detour();
+
+using func_t = void(*)();
+renhook::inline_hook<func_t> func_hook(0x14000000, &func_detour);
+
+void func_detour()
+{
+    OutputDebugStringA("Hello from the hook!\n");
+    func_hook();
+}
+
+int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR lpCmdLine, _In_ int nCmdShow)
+{
+    func_hook.attach();
+    func_hook();
+    func_hook.detach();
+
+    func_hook();
+    return 0;
+}
+```
+
+### Hooking by pattern
+
+```cpp
+#include <Windows.h>
+#include <renhook/renhook.hpp>
+
+void func_detour();
+
+using func_t = void(*)();
+renhook::inline_hook<func_t> func_hook({ 0x89, 0x79, 0xF8, 0xE8, 0xCC, 0xCC, 0xCC, 0xCC, 0x8B, 0x0D, 0xCC, 0xCC, 0xCC, 0xCC }, &func_detour, 0xCC, 3);
+
+void func_detour()
+{
+    OutputDebugStringA("Hello from the hook!\n");
+    func_hook();
+}
+
+int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR lpCmdLine, _In_ int nCmdShow)
+{
+    func_hook.attach();
+    func_hook();
+    func_hook.detach();
+
+    func_hook();
+    return 0;
+}
+```
+
+### Hooking a function from a module
+
+```cpp
+#include <Windows.h>
+#include <renhook/renhook.hpp>
+
+int WINAPI msgbox_detour(HWND wnd, LPCWSTR text, LPCWSTR caption, UINT type);
+
+using MessageBoxW_t = int(WINAPI*)(HWND, LPCWSTR, LPCWSTR, UINT);
+renhook::inline_hook<MessageBoxW_t> msgbox_hook("user32", "MessageBoxW", &msgbox_detour);
+
+int WINAPI msgbox_detour(HWND wnd, LPCWSTR text, LPCWSTR caption, UINT type)
+{
+    return msgbox_hook(wnd, L"Hello from the hook!", L"RenHook", MB_OK | MB_ICONINFORMATION);
+}
+
+int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR lpCmdLine, _In_ int nCmdShow)
+{
+    msgbox_hook.attach();
+    MessageBoxW(nullptr, L"Hello", L"Message", MB_OK);
+    msgbox_hook.detach();
+
+    MessageBoxW(nullptr, L"Hello", L"Message", MB_OK);
+    return 0;
+}
+```
 
 ## Build instructions
 
 ### Requirements
 
-* **[PREMAKE 5](https://github.com/premake/premake-core/releases)**.
+* **[CMake 3.8+](https://cmake.org/)**.
 
 ### Windows
 
-1. Download and install **[Visual Studio 2017 Community Edition](https://www.visualstudio.com/)** or a higher version.
-2. Clone this repository.
-3. Extract the content of **[PREMAKE 5](https://github.com/premake/premake-core/releases)** into **Premake** directory.
-11. Go to the **Premake** directory and run **GenerateVisualStudioProjects.bat**.
-12. Open the solution (**RenHook.sln**) located in **Premake/Projects** directory.
-13. Build the projects.
-
-## Examples
-
-### Basic usage
-
-```cpp
-#include <RenHook/RenHook.hpp>
-
-int IsDebuggerPresentFunction()
-{
-    return 0;
-}
-
-int main()
-{
-    RenHook::Hook::Create(L"kernel32", L"IsDebuggerPresent", &IsDebuggerPresentFunction);
-    std::cout << IsDebuggerPresent() << std::endl;
-
-    return 0;
-}
-```
-
-### Trampolines
-
-```cpp
-#include <RenHook/RenHook.hpp>
-
-MessageBoxWFunction(HWND hWnd, LPCWSTR lpText, LPCWSTR lpCaption, UINT uType)
-{
-    auto Hook = RenHook::Hook::Get(L"user32", L"MessageBoxW");
-
-    using MessageBoxW_t = int(*)(HWND hWnd, LPCWSTR lpText, LPCWSTR lpCaption, UINT uType);
-    return Hook->Call<MessageBoxW_t>(hWnd, L"Hello from the hook!", L"Hooked MessageBoxW", MB_OK);
-}
-
-int main()
-{
-    RenHook::Hook::Create(L"user32", L"MessageBoxW", &MessageBoxWFunction);
-    MessageBoxW(nullptr, L"Hello", L"MessageBoxW", MB_OK);
-
-    return 0;
-}
-```
-
-### Trampolines (with [std::shared_ptr](http://en.cppreference.com/w/cpp/memory/shared_ptr))
-
-```cpp
-#include <RenHook/RenHook.hpp>
-
-std::shared_ptr<RenHook::Hook> MessageBoxWHook;
-
-int MessageBoxWFunction(HWND hWnd, LPCWSTR lpText, LPCWSTR lpCaption, UINT uType)
-{
-    using MessageBoxW_t = int(WINAPI*)(HWND hWnd, LPCWSTR lpText, LPCWSTR lpCaption, UINT uType);
-    return MessageBoxWHook->Call<int, MessageBoxW_t>(hWnd, L"Hello from the hook!", L"Hooked MessageBoxW", MB_OK);
-}
-
-int main()
-{
-    MessageBoxWHook = RenHook::Hook::Create(L"user32", L"MessageBoxW", &MessageBoxWFunction);
-    MessageBoxW(nullptr, L"Hello", L"MessageBoxW", MB_OK);
-
-    return 0;
-}
-```
+1. Download and install **[Visual Studio 2019 Community Edition](https://www.visualstudio.com/)** or a higher version.
+2. Download and install the **[Requirements](#requirements)**.
+3. Clone this repository.
+4. Clone the dependencies (`git submodule update --init --recursive`).
+5. Create a directory named `build` and run **[CMake](https://cmake.org/)** in it.
+6. Open the solution (**RenHook.sln**) located in **build** directory.
+7. Build the projects.
